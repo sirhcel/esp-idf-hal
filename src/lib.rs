@@ -26,6 +26,7 @@ pub mod hall;
 pub mod i2c;
 #[cfg(all(feature = "experimental", not(feature = "ulp")))]
 pub mod interrupt;
+pub mod ledc;
 #[cfg(not(feature = "ulp"))]
 pub mod mutex;
 pub mod peripherals;
