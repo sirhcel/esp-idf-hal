@@ -1,5 +1,5 @@
 use crate::gpio::OutputPin;
-use embedded_hal::PwmPin;
+use embedded_hal::pwm::blocking::PwmPin;
 use esp_idf_sys::*;
 
 type Duty = u8;
@@ -112,32 +112,30 @@ impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
 
 impl<'a, C: HwChannel, T:HwTimer, P: OutputPin>  PwmPin for Channel<'a, C, T, P> {
     type Duty = Duty;
+    type Error = EspError;
 
-    fn disable(&mut self) {
-        if self.update_duty(0).is_err() {
-            panic!("disabling PWM failed!");
-        }
+    fn disable(&mut self) -> Result<(), Self::Error> {
+        self.update_duty(0)?;
+        Ok(())
     }
 
-    fn enable(&mut self) {
-        if self.update_duty(self.duty).is_err() {
-            panic!("enabling PWM failed!");
-        }
+    fn enable(&mut self) -> Result<(), Self::Error> {
+        self.update_duty(self.duty)?;
+        Ok(())
     }
 
-    fn get_duty(&self) -> Self::Duty {
-        self.duty
+    fn get_duty(&self) -> Result::<Self::Duty, Self::Error> {
+        Ok(self.duty)
     }
 
-    fn get_max_duty(&self) -> Self::Duty {
-        Duty::MAX
+    fn get_max_duty(&self) -> Result::<Self::Duty, Self::Error> {
+        Ok(Duty::MAX)
     }
 
-    fn set_duty(&mut self, duty: Duty) {
+    fn set_duty(&mut self, duty: Duty) -> Result<(), Self::Error> {
         self.duty = duty;
-        if self.update_duty(duty).is_err() {
-            panic!("updating PWM failed!");
-        }
+        self.update_duty(duty)?;
+        Ok(())
     }
 }
 
