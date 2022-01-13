@@ -1,10 +1,16 @@
 use crate::gpio::OutputPin;
 use embedded_hal::pwm::blocking::PwmPin;
 use esp_idf_sys::*;
+use lazy_static::lazy_static;
+use std::sync::Mutex;
 
 type Duty = u8;
 
 const HPOINT: u32 = 0;
+
+lazy_static! {
+    static ref FADE_FUNC_INSTALLED: Mutex<bool> = Mutex::new(false);
+}
 
 pub mod config {
     use crate::units::*;
@@ -85,11 +91,17 @@ impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
             hpoint: HPOINT as i32,
         };
 
-        // FIXME: Why is this nescessary? How can we do this exactly once? How
-        // to release it once there is not active channel?
-        esp!(unsafe { ledc_fade_func_install(0) })?;
+        let mut installed = FADE_FUNC_INSTALLED.lock().unwrap();
+        if !*installed {
+            // FIXME: Why is this nescessary? How to release it once there is
+            // not active channel?
+            esp!(unsafe { ledc_fade_func_install(0) })?;
+            *installed = true;
+        }
+        drop(installed);
 
-        // SAFETY: As log as we have borrowed the timer, we are safe to use it.
+        // SAFETY: As long as we have borrowed the timer, we are safe to use
+        // it.
         esp!(unsafe { ledc_channel_config(&channel_config) })?;
 
         Ok(Channel {
