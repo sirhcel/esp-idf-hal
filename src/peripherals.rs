@@ -12,6 +12,7 @@ use crate::gpio;
 use crate::hall;
 #[cfg(not(feature = "ulp"))]
 use crate::i2c;
+use crate::ledc;
 #[cfg(not(feature = "ulp"))]
 use crate::serial;
 #[cfg(not(feature = "ulp"))]
@@ -41,6 +42,7 @@ pub struct Peripherals {
     pub hall_sensor: hall::HallSensor,
     #[cfg(not(feature = "ulp"))]
     pub can: can::CAN,
+    pub ledc: ledc::Peripheral,
 }
 
 static TAKEN: mutex::Mutex<bool> = mutex::Mutex::new(false);
@@ -85,6 +87,7 @@ impl Peripherals {
             hall_sensor: hall::HallSensor::new(),
             #[cfg(not(feature = "ulp"))]
             can: can::CAN::new(),
+            ledc: ledc::Peripheral::new(),
         }
     }
 }

@@ -149,7 +149,7 @@ impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
         })
     }
 
-    /// Releases the output channel peripheral
+    /// Releases the output channel peripheral and GPIO pin used by this output channel
     pub fn release(self) -> Result<(C, P), EspError> {
         Ok((self.instance, self.pin))
     }
