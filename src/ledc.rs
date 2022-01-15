@@ -34,6 +34,7 @@ pub use chip::*;
 type Duty = u8;
 
 const HPOINT: u32 = 0;
+const IDLE_LEVEL: u32 = 0;
 
 lazy_static! {
     static ref FADE_FUNC_INSTALLED: Mutex<bool> = Mutex::new(false);
@@ -97,9 +98,28 @@ impl<T: HwTimer> Timer<T> {
         })
     }
 
-    /// Releases the timer peripheral
-    pub fn release(self) -> Result<T, EspError> {
+    /// Pauses the timer. Operation can be resumed with
+    /// [`resume()`](Timer::resume()).
+    pub fn pause(&mut self) -> Result<(), EspError> {
+        esp!(unsafe { ledc_timer_pause(self.speed_mode, T::timer()) })?;
+        Ok(())
+    }
+
+    /// Stops the timer and releases its hardware resource
+    pub fn release(mut self) -> Result<T, EspError> {
+        self.reset()?;
         Ok(self.instance)
+    }
+
+    fn reset(&mut self) -> Result<(), EspError> {
+        esp!(unsafe { ledc_timer_rst(self.speed_mode, T::timer()) })?;
+        Ok(())
+    }
+
+    /// Resumes the operation of a previously paused timer
+    pub fn resume(&mut self) -> Result<(), EspError> {
+       esp!(unsafe { ledc_timer_resume(self.speed_mode, T::timer()) })?;
+       Ok(())
     }
 }
 
@@ -149,9 +169,16 @@ impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
         })
     }
 
-    /// Releases the output channel peripheral and GPIO pin used by this output channel
-    pub fn release(self) -> Result<(C, P), EspError> {
+    /// Stops the output channel and releases its hardware resource and GPIO
+    /// pin
+    pub fn release(mut self) -> Result<(C, P), EspError> {
+        self.stop()?;
         Ok((self.instance, self.pin))
+    }
+
+    fn stop(&mut self) -> Result<(), EspError> {
+        esp!(unsafe { ledc_stop(self.timer.speed_mode, C::channel(), IDLE_LEVEL) })?;
+        Ok(())
     }
 
     fn update_duty(&mut self, duty: Duty) -> Result<(), EspError> {
@@ -160,7 +187,7 @@ impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
     }
 }
 
-impl<'a, C: HwChannel, T:HwTimer, P: OutputPin>  PwmPin for Channel<'a, C, T, P> {
+impl<'a, C: HwChannel, T: HwTimer, P: OutputPin>  PwmPin for Channel<'a, C, T, P> {
     type Duty = Duty;
     type Error = EspError;
 
