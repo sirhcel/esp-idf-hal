@@ -1,8 +1,35 @@
+//! LED Control peripheral (which also crates PWM signals for other purposes)
+//!
+//! Interface to the [LED Control (LEDC)
+//! peripheral](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/api-reference/peripherals/ledc.html)
+//!
+//! # Example
+//!
+//! Create a 25 kHz PWM signal with 25 % duty cycle on GPIO 1
+//! ```
+//! use esp_idf_hal::ledc::{
+//!     config::TimerConfig,
+//!     Channel,
+//!     Timer,
+//! };
+//! use esp_idf_hal::peripherals::Peripherals;
+//! use esp_idf_hal::prelude::*;
+//!
+//! let peripherals = Peripherals::take().unwrap();
+//! let config = TimerConfig::default().frequency(25.kHz().into());
+//! let timer = Timer::new(peripherals.ledc.timer0, &config)?;
+//! let channel = Channel::new(peripherals.ledc.channel0, &timer, peripherals.pins.gpio1)?;
+//!
+//! channel.set_duty(64);
+//! ```
+
 use crate::gpio::OutputPin;
 use embedded_hal::pwm::blocking::PwmPin;
 use esp_idf_sys::*;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
+
+pub use chip::*;
 
 type Duty = u8;
 
@@ -12,6 +39,7 @@ lazy_static! {
     static ref FADE_FUNC_INSTALLED: Mutex<bool> = Mutex::new(false);
 }
 
+/// Types for configuring the LED Control peripheral
 pub mod config {
     use crate::units::*;
     use super::*;
@@ -19,6 +47,18 @@ pub mod config {
     pub struct TimerConfig {
         pub frequency: Hertz,
         pub speed_mode: ledc_mode_t,
+    }
+
+    impl TimerConfig {
+        pub fn frequency(mut self, f: Hertz) -> Self {
+            self.frequency = f;
+            self
+        }
+
+        pub fn speed_mode(mut self, mode: ledc_mode_t) -> Self {
+            self.speed_mode = mode;
+            self
+        }
     }
 
     impl Default for TimerConfig {
@@ -31,20 +71,14 @@ pub mod config {
     }
 }
 
-pub trait HwTimer {
-    fn timer() -> ledc_timer_t;
-}
-
-pub trait HwChannel {
-    fn channel() -> ledc_channel_t;
-}
-
+/// LED Control timer abstraction
 pub struct Timer<T: HwTimer> {
     instance: T,
     speed_mode: ledc_mode_t,
 }
 
 impl<T: HwTimer> Timer<T> {
+    /// Creates a new LED Control timer abstraction
     pub fn new(instance: T, config: &config::TimerConfig) -> Result<Self, EspError> {
         let timer_config = ledc_timer_config_t {
             speed_mode: config.speed_mode,
@@ -63,11 +97,13 @@ impl<T: HwTimer> Timer<T> {
         })
     }
 
+    /// Releases the timer peripheral
     pub fn release(self) -> Result<T, EspError> {
         Ok(self.instance)
     }
 }
 
+/// LED Control output channel abstraction
 pub struct Channel<'a, C: HwChannel, T: HwTimer, P: OutputPin> {
     instance: C,
     timer: &'a Timer<T>,
@@ -77,6 +113,7 @@ pub struct Channel<'a, C: HwChannel, T: HwTimer, P: OutputPin> {
 
 // FIXME: Stop channel upon dropping.
 impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
+    /// Creates a new LED Control output channel abstraction
     pub fn new(instance: C, timer: &'a Timer<T>, pin: P) -> Result<Self, EspError> {
         let duty = 0u8;
         let channel_config = ledc_channel_config_t {
@@ -112,6 +149,7 @@ impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
         })
     }
 
+    /// Releases the output channel peripheral
     pub fn release(self) -> Result<(C, P), EspError> {
         Ok((self.instance, self.pin))
     }
@@ -151,47 +189,117 @@ impl<'a, C: HwChannel, T:HwTimer, P: OutputPin>  PwmPin for Channel<'a, C, T, P>
     }
 }
 
-macro_rules! impl_timer {
-    ($instance:ident: $timer:expr) => {
-        pub struct $instance;
+mod chip {
+    use core::marker::PhantomData;
+    use esp_idf_sys::*;
 
-        impl $instance {
-            pub unsafe fn new() -> Self {
-                $instance {}
+    /// LED Control peripheral timer
+    pub trait HwTimer {
+        fn timer() -> ledc_timer_t;
+    }
+
+    /// LED Control peripheral output channel
+    pub trait HwChannel {
+        fn channel() -> ledc_channel_t;
+    }
+
+    macro_rules! impl_timer {
+        ($instance:ident: $timer:expr) => {
+            pub struct $instance {
+                _marker: PhantomData<*const ()>,
+            }
+
+            impl $instance {
+                pub unsafe fn new() -> Self {
+                    $instance { _marker: PhantomData }
+                }
+            }
+
+            impl HwTimer for $instance {
+                fn timer() -> ledc_timer_t {
+                    $timer
+                }
             }
         }
+    }
 
-        impl HwTimer for $instance {
-            fn timer() -> ledc_timer_t {
-                $timer
+    impl_timer!(TIMER0: ledc_timer_t_LEDC_TIMER_0);
+    impl_timer!(TIMER1: ledc_timer_t_LEDC_TIMER_1);
+    impl_timer!(TIMER2: ledc_timer_t_LEDC_TIMER_2);
+    impl_timer!(TIMER3: ledc_timer_t_LEDC_TIMER_3);
+
+    macro_rules! impl_channel {
+        ($instance:ident: $channel:expr) => {
+            pub struct $instance {
+                _marker: PhantomData<*const ()>,
+            }
+
+            impl $instance {
+                pub unsafe fn new() -> Self {
+                    $instance { _marker: PhantomData }
+                }
+            }
+
+            impl HwChannel for $instance {
+                fn channel() -> ledc_channel_t {
+                    $channel
+                }
+            }
+        }
+    }
+
+    impl_channel!(CHANNEL0: ledc_channel_t_LEDC_CHANNEL_0);
+    impl_channel!(CHANNEL1: ledc_channel_t_LEDC_CHANNEL_1);
+    impl_channel!(CHANNEL2: ledc_channel_t_LEDC_CHANNEL_2);
+    impl_channel!(CHANNEL3: ledc_channel_t_LEDC_CHANNEL_3);
+    impl_channel!(CHANNEL4: ledc_channel_t_LEDC_CHANNEL_4);
+    impl_channel!(CHANNEL5: ledc_channel_t_LEDC_CHANNEL_5);
+
+    /// The LED Control device peripheral
+    pub struct Peripheral {
+        pub timer0: TIMER0,
+        pub timer1: TIMER1,
+        pub timer2: TIMER2,
+        pub timer3: TIMER3,
+        pub channel0: CHANNEL0,
+        pub channel1: CHANNEL1,
+        pub channel2: CHANNEL2,
+        pub channel3: CHANNEL3,
+        pub channel4: CHANNEL4,
+        pub channel5: CHANNEL5,
+        #[cfg(any(esp32, esp32s2, esp32s3, esp8684))]
+        pub channel6: CHANNEL6,
+        #[cfg(any(esp32, esp32s2, esp32s3, esp8684))]
+        pub channel7: CHANNEL7,
+    }
+
+    impl Peripheral {
+        /// Creates a new instance of the LEDC peripheral. Typically one wants
+        /// to use the instance [`ledc`](crate::peripherals::Peripherals::ledc) from
+        /// the device peripherals obtained via
+        /// [`peripherals::Peripherals::take()`](crate::peripherals::Peripherals::take()).
+        ///
+        /// # Safety
+        ///
+        /// It is safe to instantiate the LEDC peripheral exactly one time.
+        /// Care has to be taken that this has not already been done elsewhere.
+        pub unsafe fn new() -> Self {
+            Self {
+                timer0: TIMER0::new(),
+                timer1: TIMER1::new(),
+                timer2: TIMER2::new(),
+                timer3: TIMER3::new(),
+                channel0: CHANNEL0::new(),
+                channel1: CHANNEL1::new(),
+                channel2: CHANNEL2::new(),
+                channel3: CHANNEL3::new(),
+                channel4: CHANNEL4::new(),
+                channel5: CHANNEL5::new(),
+                #[cfg(any(esp32, esp32s2, esp32s3, esp8684))]
+                channel6: CHANNEL6::new(),
+                #[cfg(any(esp32, esp32s2, esp32s3, esp8684))]
+                channel7: CHANNEL7::new(),
             }
         }
     }
 }
-
-impl_timer!(TIMER0: ledc_timer_t_LEDC_TIMER_0);
-impl_timer!(TIMER1: ledc_timer_t_LEDC_TIMER_1);
-impl_timer!(TIMER2: ledc_timer_t_LEDC_TIMER_2);
-// FIMXE: Complete LEDC timer instances.
-
-macro_rules! impl_channel {
-    ($instance:ident: $channel:expr) => {
-        pub struct $instance;
-
-        impl $instance {
-            pub unsafe fn new() -> Self {
-                $instance {}
-            }
-        }
-
-        impl HwChannel for $instance {
-            fn channel() -> ledc_channel_t {
-                $channel
-            }
-        }
-    }
-}
-
-impl_channel!(CHANNEL0: ledc_channel_t_LEDC_CHANNEL_0);
-impl_channel!(CHANNEL1: ledc_channel_t_LEDC_CHANNEL_1);
-// FIXME: Complete LEDC channel instances.
