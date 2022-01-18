@@ -176,6 +176,30 @@ impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
         Ok((self.instance, self.pin))
     }
 
+    fn get_duty(&self) -> Duty {
+        self.duty
+    }
+
+    fn get_max_duty(&self) -> Duty {
+        Duty::MAX
+    }
+
+    fn disable(&mut self) -> Result<(), EspError> {
+        self.update_duty(0)?;
+        Ok(())
+    }
+
+    fn enable(&mut self) -> Result<(), EspError> {
+        self.update_duty(self.duty)?;
+        Ok(())
+    }
+
+    fn set_duty(&mut self, duty: Duty) -> Result<(), EspError> {
+        self.duty = duty;
+        self.update_duty(duty)?;
+        Ok(())
+    }
+
     fn stop(&mut self) -> Result<(), EspError> {
         esp!(unsafe { ledc_stop(self.timer.speed_mode, C::channel(), IDLE_LEVEL) })?;
         Ok(())
@@ -187,32 +211,58 @@ impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> Channel<'a, C, T, P> {
     }
 }
 
-impl<'a, C: HwChannel, T: HwTimer, P: OutputPin>  PwmPin for Channel<'a, C, T, P> {
+impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> PwmPin for Channel<'a, C, T, P> {
     type Duty = Duty;
     type Error = EspError;
 
     fn disable(&mut self) -> Result<(), Self::Error> {
-        self.update_duty(0)?;
-        Ok(())
+        self.disable()
     }
 
     fn enable(&mut self) -> Result<(), Self::Error> {
-        self.update_duty(self.duty)?;
-        Ok(())
+        self.enable()
     }
 
     fn get_duty(&self) -> Result::<Self::Duty, Self::Error> {
-        Ok(self.duty)
+        Ok(self.get_duty())
     }
 
     fn get_max_duty(&self) -> Result::<Self::Duty, Self::Error> {
-        Ok(Duty::MAX)
+        Ok(self.get_max_duty())
     }
 
     fn set_duty(&mut self, duty: Duty) -> Result<(), Self::Error> {
-        self.duty = duty;
-        self.update_duty(duty)?;
-        Ok(())
+        self.set_duty(duty)
+    }
+}
+
+impl<'a, C: HwChannel, T: HwTimer, P: OutputPin> embedded_hal_0_2::PwmPin for Channel<'a, C, T, P> {
+    type Duty = Duty;
+
+    fn disable(&mut self) {
+        if let Err(e) = self.disable() {
+            panic!("disabling PWM failed: {}", e);
+        }
+    }
+
+    fn enable(&mut self) {
+        if let Err(e) = self.enable() {
+            panic!("enabling PWM failed: {}", e);
+        }
+    }
+
+    fn get_duty(&self) -> Self::Duty {
+        self.get_duty()
+    }
+
+    fn get_max_duty(&self) -> Self::Duty {
+        self.get_max_duty()
+    }
+
+    fn set_duty(&mut self, duty:Duty) {
+        if let Err(e) = self.set_duty(duty) {
+            panic!("updating duty failed: {}", e);
+        }
     }
 }
 
