@@ -22,6 +22,10 @@ riscv-ulp-hal = []
 
 experimental = []
 
+[patch.crates-io]
+esp-idf-hal = { path = "." }
+esp-idf-sys = { git = "https://github.com/sirhcel/esp-idf-sys", rev = "807a189" }
+
 [dependencies]
 nb = "0.1.2"
 mutex-trait = { version = "0.2", optional = true, default-features = false }
